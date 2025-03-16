@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'locale_provider.dart'; // Import LocaleProvider
+import 'package:provider/provider.dart';
 
 class SummaryScreen extends StatefulWidget {
   @override
@@ -9,8 +11,13 @@ class SummaryScreen extends StatefulWidget {
 }
 
 class _SummaryScreenState extends State<SummaryScreen> {
+  Map<String, double> _dailyIncome = {};
+  Map<String, double> _dailyExpense = {};
   Map<String, double> _monthlyIncome = {};
   Map<String, double> _monthlyExpense = {};
+  Map<String, double> _yearlyIncome = {};
+  Map<String, double> _yearlyExpense = {};
+  String _selectedSummaryType = 'Daily'; // Default summary type
 
   @override
   void initState() {
@@ -39,47 +46,86 @@ class _SummaryScreenState extends State<SummaryScreen> {
         .collection('transactions')
         .get();
 
+    Map<String, double> dailyIncome = {};
+    Map<String, double> dailyExpense = {};
     Map<String, double> monthlyIncome = {};
     Map<String, double> monthlyExpense = {};
+    Map<String, double> yearlyIncome = {};
+    Map<String, double> yearlyExpense = {};
 
     for (var doc in incomeSnapshot.docs) {
       var data = doc.data() as Map<String, dynamic>;
       if (data.containsKey('timestamp') && data['timestamp'] != null) {
-        String month = DateFormat('yyyy-MM').format((data['timestamp'] as Timestamp).toDate());
+        DateTime date = (data['timestamp'] as Timestamp).toDate();
+        String day = DateFormat('yyyy-MM-dd').format(date);
+        String month = DateFormat('yyyy-MM').format(date);
+        String year = DateFormat('yyyy').format(date);
         double amount = data['amount'];
-        if (monthlyIncome.containsKey(month)) {
-          monthlyIncome[month] = monthlyIncome[month]! + amount;
-        } else {
-          monthlyIncome[month] = amount;
-        }
+
+        dailyIncome[day] = (dailyIncome[day] ?? 0) + amount;
+        monthlyIncome[month] = (monthlyIncome[month] ?? 0) + amount;
+        yearlyIncome[year] = (yearlyIncome[year] ?? 0) + amount;
       }
     }
 
     for (var doc in expenseSnapshot.docs) {
       var data = doc.data() as Map<String, dynamic>;
       if (data.containsKey('date') && data['date'] != null) {
-        String month = DateFormat('yyyy-MM').format((data['date'] as Timestamp).toDate());
+        DateTime date = (data['date'] as Timestamp).toDate();
+        String day = DateFormat('yyyy-MM-dd').format(date);
+        String month = DateFormat('yyyy-MM').format(date);
+        String year = DateFormat('yyyy').format(date);
         double amount = data['amount'];
-        if (monthlyExpense.containsKey(month)) {
-          monthlyExpense[month] = monthlyExpense[month]! + amount;
-        } else {
-          monthlyExpense[month] = amount;
-        }
+
+        dailyExpense[day] = (dailyExpense[day] ?? 0) + amount;
+        monthlyExpense[month] = (monthlyExpense[month] ?? 0) + amount;
+        yearlyExpense[year] = (yearlyExpense[year] ?? 0) + amount;
       }
     }
 
     if (mounted) {
       setState(() {
+        _dailyIncome = dailyIncome;
+        _dailyExpense = dailyExpense;
         _monthlyIncome = monthlyIncome;
         _monthlyExpense = monthlyExpense;
+        _yearlyIncome = yearlyIncome;
+        _yearlyExpense = yearlyExpense;
       });
+    }
+  }
+
+  Map<String, double> _getIncomeSummary() {
+    switch (_selectedSummaryType) {
+      case 'Monthly':
+        return _monthlyIncome;
+      case 'Yearly':
+        return _yearlyIncome;
+      default:
+        return _dailyIncome;
+    }
+  }
+
+  Map<String, double> _getExpenseSummary() {
+    switch (_selectedSummaryType) {
+      case 'Monthly':
+        return _monthlyExpense;
+      case 'Yearly':
+        return _yearlyExpense;
+      default:
+        return _dailyExpense;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    List<String> sortedMonths = _monthlyIncome.keys.toList()
-      ..sort((a, b) => b.compareTo(a)); // Sort months from newest to oldest
+    final localeProvider = Provider.of<LocaleProvider>(context);
+
+    Map<String, double> incomeSummary = _getIncomeSummary();
+    Map<String, double> expenseSummary = _getExpenseSummary();
+
+    List<String> sortedKeys = incomeSummary.keys.toList()
+      ..sort((a, b) => b.compareTo(a)); // Sort keys from newest to oldest
 
     return Scaffold(
       appBar: AppBar(
@@ -93,57 +139,78 @@ class _SummaryScreenState extends State<SummaryScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: ListView.builder(
-          itemCount: sortedMonths.length,
-          itemBuilder: (context, index) {
-            String month = sortedMonths[index];
-            double income = _monthlyIncome[month] ?? 0.0;
-            double expense = _monthlyExpense[month] ?? 0.0;
-            double balance = income - expense;
+        child: Column(
+          children: [
+            // Dropdown to select summary type
+            DropdownButton<String>(
+              value: _selectedSummaryType,
+              items: ['Daily', 'Monthly', 'Yearly'].map((type) {
+                return DropdownMenuItem(value: type, child: Text(type));
+              }).toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    _selectedSummaryType = value;
+                  });
+                }
+              },
+            ),
+            SizedBox(height: 16),
+            Expanded(
+              child: ListView.builder(
+                itemCount: sortedKeys.length,
+                itemBuilder: (context, index) {
+                  String key = sortedKeys[index];
+                  double income = incomeSummary[key] ?? 0.0;
+                  double expense = expenseSummary[key] ?? 0.0;
+                  double balance = income - expense;
 
-            return Card(
-              margin: EdgeInsets.symmetric(vertical: 8.0),
-              elevation: 4.0,
-              child: ListTile(
-                title: Text(
-                  month,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18.0,
-                  ),
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(height: 8.0),
-                    Text(
-                      'Income: ฿${income.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: Colors.green[700],
-                        fontSize: 16.0,
+                  return Card(
+                    margin: EdgeInsets.symmetric(vertical: 8.0),
+                    elevation: 4.0,
+                    child: ListTile(
+                      title: Text(
+                        key,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18.0,
+                        ),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(height: 8.0),
+                          Text(
+                            'Income: ${localeProvider.formatAmount(income)}',
+                            style: TextStyle(
+                              color: Colors.green[700],
+                              fontSize: 16.0,
+                            ),
+                          ),
+                          Text(
+                            'Expense: ${localeProvider.formatAmount(expense)}',
+                            style: TextStyle(
+                              color: Colors.red[700],
+                              fontSize: 16.0,
+                            ),
+                          ),
+                          Text(
+                            'Summary: ${localeProvider.formatAmount(balance)}',
+                            style: TextStyle(
+                              color: balance < 0 ? Colors.red : Colors.green,
+                              fontSize: 16.0,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 8.0),
+                        ],
                       ),
                     ),
-                    Text(
-                      'Expense: ฿${expense.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: Colors.red[700],
-                        fontSize: 16.0,
-                      ),
-                    ),
-                    Text(
-                      'Summary: ฿${balance.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: balance < 0 ? Colors.red : Colors.green,
-                        fontSize: 16.0,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 8.0),
-                  ],
-                ),
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );

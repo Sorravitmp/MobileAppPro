@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math';
+import 'locale_provider.dart'; // Import LocaleProvider
+import 'package:provider/provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   @override
@@ -76,6 +78,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final localeProvider = Provider.of<LocaleProvider>(context);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -162,6 +166,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 style: TextStyle(color: Colors.black),
               ),
+            ),
+            SizedBox(height: 20),
+            DropdownButton<String>(
+              value: localeProvider.selectedCurrency,
+              items: localeProvider.availableCurrencies.map((currency) {
+                return DropdownMenuItem(value: currency, child: Text(currency));
+              }).toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  localeProvider.setCurrency(value);
+                }
+              },
             ),
             SizedBox(height: 20),
             SizedBox(

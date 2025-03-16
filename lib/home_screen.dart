@@ -16,7 +16,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Widget> _screens = [
     TransactionScreen(),
     IncomeScreen(),  // เพิ่ม IncomeScreen ในรายการหน้าจอ
-    SummaryScreen(),  // เพิ่ม SummaryScreen ในรายการหน้าจอ
+    SummaryScreen(), // Add SummaryScreen to the list of screens
   ];
 
   void _onTapped(int index) {

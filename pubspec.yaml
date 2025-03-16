@@ -18,6 +18,8 @@ dependencies:
   firebase_storage: ^11.7.7
   intl: ^0.17.0
   flutter_svg: ^2.0.10
+  shared_preferences: ^2.0.15 # Ensure this line is present
+  country_picker: ^2.0.17 # Add this line
 
 dev_dependencies:
   flutter_lints: ^2.0.0

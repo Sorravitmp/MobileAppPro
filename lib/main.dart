@@ -7,13 +7,20 @@ import 'profile_screen.dart';  // Import the profile screen
 import 'transaction_screen.dart';  // Import the transaction screen
 import 'home_screen.dart';  // Import the home screen
 import 'summary_screen.dart';  // Import the summary screen
+import 'package:provider/provider.dart';
+import 'locale_provider.dart'; // Import the LocaleProvider
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,  // Ensure correct FirebaseOptions
   );
-  runApp(MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => LocaleProvider(), // Provide LocaleProvider
+      child: MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -29,7 +36,6 @@ class MyApp extends StatelessWidget {
         '/income': (context) => IncomeScreen(),  // Add route for income screen
         '/profile': (context) => ProfileScreen(),  // Add route for profile screen
         '/transactions': (context) => TransactionScreen(),  // Add route for transaction screen
-        '/summary': (context) => SummaryScreen(),  // Add route for summary screen
       },
     );
   }

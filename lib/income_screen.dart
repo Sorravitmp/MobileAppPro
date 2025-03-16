@@ -5,6 +5,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'locale_provider.dart'; // Import LocaleProvider
+import 'package:provider/provider.dart';
 
 class IncomeScreen extends StatefulWidget {
   @override
@@ -15,6 +17,8 @@ class _IncomeScreenState extends State<IncomeScreen> {
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _sourceController = TextEditingController();
   File? _receiptImage;
+  DateTime? _selectedDate; // Add a variable to store the selected date
+  TimeOfDay? _selectedTime; // Add a variable to store the selected time
 
   Future<void> _pickImage() async {
     final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -23,6 +27,43 @@ class _IncomeScreenState extends State<IncomeScreen> {
         _receiptImage = File(pickedFile.path);
       });
     }
+  }
+
+  Future<void> _pickDate(BuildContext context) async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (pickedDate != null) {
+      setState(() {
+        _selectedDate = pickedDate;
+        _selectedTime = null; // Reset time when a new date is selected
+      });
+    }
+  }
+
+  Future<void> _pickTime(BuildContext context) async {
+    final TimeOfDay? pickedTime = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime ?? TimeOfDay.now(),
+    );
+    if (pickedTime != null) {
+      setState(() {
+        _selectedTime = pickedTime;
+      });
+    }
+  }
+
+  DateTime _getFinalDateTime() {
+    if (_selectedDate == null) {
+      return DateTime.now(); // Use current date and time
+    }
+    if (_selectedTime == null) {
+      return DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, DateTime.now().hour, DateTime.now().minute);
+    }
+    return DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _selectedTime!.hour, _selectedTime!.minute);
   }
 
   Future<String?> _uploadImage(File image) async {
@@ -61,7 +102,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
       Map<String, dynamic> incomeData = {
         'amount': amount,
         'source': source,
-        'timestamp': Timestamp.fromDate(DateTime.now()), // เปลี่ยนเป็น Timestamp จาก DateTime.now()
+        'timestamp': Timestamp.fromDate(_getFinalDateTime()), // Use the final date and time
         'receiptUrl': imageUrl,
       };
 
@@ -75,6 +116,8 @@ class _IncomeScreenState extends State<IncomeScreen> {
       _sourceController.clear();
       setState(() {
         _receiptImage = null;
+        _selectedDate = null;
+        _selectedTime = null; // Reset the selected date and time
       });
 
       print("✅ Income added: $incomeData");
@@ -90,104 +133,6 @@ class _IncomeScreenState extends State<IncomeScreen> {
         ),
       );
     }
-  }
-
-  void _editIncome(String id, Map<String, dynamic> income) async {
-    _amountController.text = income['amount'].toString();
-    _sourceController.text = income['source'];
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Edit Income'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _amountController,
-                decoration: InputDecoration(
-                  labelText: "Amount",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none,
-                  ),
-                  prefixIcon: Icon(Icons.attach_money, color: Colors.black),
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: EdgeInsets.symmetric(vertical: 16),
-                ),
-                keyboardType: TextInputType.number,
-                style: TextStyle(color: Colors.black),
-              ),
-              SizedBox(height: 10),
-              TextField(
-                controller: _sourceController,
-                decoration: InputDecoration(
-                  labelText: "Source",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none,
-                  ),
-                  prefixIcon: Icon(Icons.category, color: Colors.black),
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: EdgeInsets.symmetric(vertical: 16),
-                ),
-                style: TextStyle(color: Colors.black),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                try {
-                  double amount = double.parse(_amountController.text);
-                  String source = _sourceController.text;
-
-                  Map<String, dynamic> updatedIncome = {
-                    'amount': amount,
-                    'source': source,
-                    'timestamp': income['timestamp'],
-                  };
-
-                  await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(FirebaseAuth.instance.currentUser?.uid)
-                      .collection('incomes')
-                      .doc(id)
-                      .update(updatedIncome);
-
-                  Navigator.of(context).pop();
-                  _amountController.clear();
-                  _sourceController.clear();
-
-                  print("✅ Income updated: $updatedIncome");
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('กรุณากรอกจำนวนเงินให้ถูกต้อง'),
-                      backgroundColor: Colors.redAccent.withOpacity(0.8),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  );
-                }
-              },
-              child: Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   void _deleteIncome(String id) async {
@@ -229,13 +174,6 @@ class _IncomeScreenState extends State<IncomeScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _editIncome(id, income);
-              },
-              child: Text('Edit'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
                 _deleteIncome(id);
               },
               child: Text('Delete'),
@@ -248,6 +186,8 @@ class _IncomeScreenState extends State<IncomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final localeProvider = Provider.of<LocaleProvider>(context);
+
     return Scaffold(
       appBar: AppBar(
         title: Center(
@@ -305,10 +245,15 @@ class _IncomeScreenState extends State<IncomeScreen> {
                         var data = income.data() as Map<String, dynamic>;
                         return ListTile(
                           title: Text(data['source']),
-                          subtitle: Text(data['amount'].toString()),
-                          trailing: Text(data['timestamp'] != null
-                              ? DateFormat('HH:mm').format(data['timestamp'].toDate())
-                              : 'No time'),
+                          subtitle: Text(
+                            localeProvider.formatAmount(data['amount']),
+                            style: TextStyle(color: Colors.green[700]), // Set income amount to green
+                          ),
+                          trailing: Text(
+                            data['timestamp'] != null
+                                ? DateFormat('HH:mm').format(data['timestamp'].toDate())
+                                : 'No time',
+                          ),
                           onTap: () {
                             _showIncomeDetail(context, income.id, data);
                           },
@@ -328,19 +273,21 @@ class _IncomeScreenState extends State<IncomeScreen> {
           _sourceController.clear();
           setState(() {
             _receiptImage = null;
+            _selectedDate = null; // Reset the selected date
+            _selectedTime = null; // Reset the selected time
           });
           showDialog(
             context: context,
             builder: (context) {
               return AlertDialog(
-                title: Text('Income'),
+                title: Text('Add Income'),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
                       controller: _amountController,
                       decoration: InputDecoration(
-                        labelText: "Amount",
+                        labelText: "Amount (${Provider.of<LocaleProvider>(context).currencySymbol})",
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(15),
                           borderSide: BorderSide.none,
@@ -368,6 +315,35 @@ class _IncomeScreenState extends State<IncomeScreen> {
                         contentPadding: EdgeInsets.symmetric(vertical: 16),
                       ),
                       style: TextStyle(color: Colors.black),
+                    ),
+                    SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Text(
+                          _selectedDate != null
+                              ? DateFormat('yyyy-MM-dd').format(_selectedDate!)
+                              : 'Select Date',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.calendar_today, color: Colors.black),
+                          onPressed: () => _pickDate(context),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          _selectedTime != null
+                              ? _selectedTime!.format(context)
+                              : 'Select Time',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.access_time, color: Colors.black),
+                          onPressed: () => _pickTime(context),
+                        ),
+                      ],
                     ),
                   ],
                 ),

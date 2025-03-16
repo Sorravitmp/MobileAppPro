@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
 import 'reset_password_screen.dart'; // เพิ่มการนำเข้าไฟล์ reset_password_screen.dart
+import 'package:shared_preferences/shared_preferences.dart'; // Import SharedPreferences
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -14,6 +15,37 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _rememberMe = false; // Add a variable for "Remember Me"
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberedCredentials(); // Load remembered email and password on initialization
+  }
+
+  Future<void> _loadRememberedCredentials() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? rememberedEmail = prefs.getString('rememberedEmail');
+    String? rememberedPassword = prefs.getString('rememberedPassword');
+    if (rememberedEmail != null && rememberedPassword != null) {
+      setState(() {
+        emailController.text = rememberedEmail;
+        passwordController.text = rememberedPassword;
+        _rememberMe = true;
+      });
+    }
+  }
+
+  Future<void> _saveRememberedCredentials() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    if (_rememberMe) {
+      await prefs.setString('rememberedEmail', emailController.text.trim());
+      await prefs.setString('rememberedPassword', passwordController.text.trim());
+    } else {
+      await prefs.remove('rememberedEmail');
+      await prefs.remove('rememberedPassword');
+    }
+  }
 
   Future<void> _login(BuildContext context) async {
     setState(() {
@@ -25,6 +57,8 @@ class _LoginScreenState extends State<LoginScreen> {
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
       );
+
+      await _saveRememberedCredentials(); // Save or clear the remembered credentials
 
       if (mounted) {
         Navigator.pushReplacement(
@@ -228,6 +262,27 @@ class _LoginScreenState extends State<LoginScreen> {
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
+                ),
+                SizedBox(height: 12),
+                // Remember Me Checkbox
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _rememberMe,
+                      onChanged: (value) {
+                        setState(() {
+                          _rememberMe = value ?? false;
+                        });
+                      },
+                    ),
+                    Text(
+                      "Remember Me",
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
                 SizedBox(height: 30),
                 // Login Button

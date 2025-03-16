@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'locale_provider.dart'; // Import LocaleProvider
+import 'package:provider/provider.dart';
 
 class TransactionScreen extends StatefulWidget {
   @override
@@ -11,6 +13,45 @@ class TransactionScreen extends StatefulWidget {
 class _TransactionScreenState extends State<TransactionScreen> {
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _categoryController = TextEditingController();
+  DateTime? _selectedDate; // Add a variable to store the selected date
+  TimeOfDay? _selectedTime; // Add a variable to store the selected time
+
+  Future<void> _pickDate(BuildContext context) async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (pickedDate != null) {
+      setState(() {
+        _selectedDate = pickedDate;
+        _selectedTime = null; // Reset time when a new date is selected
+      });
+    }
+  }
+
+  Future<void> _pickTime(BuildContext context) async {
+    final TimeOfDay? pickedTime = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime ?? TimeOfDay.now(),
+    );
+    if (pickedTime != null) {
+      setState(() {
+        _selectedTime = pickedTime;
+      });
+    }
+  }
+
+  DateTime _getFinalDateTime() {
+    if (_selectedDate == null) {
+      return DateTime.now(); // Use current date and time
+    }
+    if (_selectedTime == null) {
+      return DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, DateTime.now().hour, DateTime.now().minute);
+    }
+    return DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _selectedTime!.hour, _selectedTime!.minute);
+  }
 
   void _addTransaction() async {
     User? user = FirebaseAuth.instance.currentUser;
@@ -21,7 +62,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
     String uid = user.uid;
 
-    if (_amountController.text.isEmpty || _categoryController.text.isEmpty) return;
+    if (_amountController.text.isEmpty || _categoryController.text.isEmpty || _selectedDate == null) return;
 
     try {
       double amount = double.parse(_amountController.text);
@@ -30,7 +71,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
       Map<String, dynamic> transactionData = {
         'amount': amount,
         'category': category,
-        'date': FieldValue.serverTimestamp(),
+        'date': Timestamp.fromDate(_getFinalDateTime()), // Use the final date and time
       };
 
       await FirebaseFirestore.instance
@@ -41,6 +82,10 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
       _amountController.clear();
       _categoryController.clear();
+      setState(() {
+        _selectedDate = null; // Reset the selected date
+        _selectedTime = null; // Reset the selected time
+      });
 
       print("✅ Transaction added: $transactionData");
     } catch (e) {
@@ -58,90 +103,141 @@ class _TransactionScreenState extends State<TransactionScreen> {
   }
 
   void _editTransaction(String id, Map<String, dynamic> transaction) async {
-    _amountController.text = transaction['amount'].toString();
+    final localeProvider = Provider.of<LocaleProvider>(context, listen: false);
+    double baseAmount = transaction['amount'] / localeProvider.conversionRate; // Convert to base currency
+    _amountController.text = baseAmount.toStringAsFixed(2); // Display the base amount
     _categoryController.text = transaction['category'];
+    DateTime existingDateTime = (transaction['date'] as Timestamp).toDate();
+    _selectedDate = DateTime(existingDateTime.year, existingDateTime.month, existingDateTime.day);
+    _selectedTime = TimeOfDay(hour: existingDateTime.hour, minute: existingDateTime.minute);
 
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text('Edit Transaction'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _amountController,
-                decoration: InputDecoration(
-                  labelText: "Amount",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  prefixIcon: Icon(Icons.attach_money, color: Colors.black),
-                ),
-                keyboardType: TextInputType.number,
-                style: TextStyle(color: Colors.black),
-              ),
-              SizedBox(height: 10),
-              TextField(
-                controller: _categoryController,
-                decoration: InputDecoration(
-                  labelText: "Category",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  prefixIcon: Icon(Icons.category, color: Colors.black),
-                ),
-                style: TextStyle(color: Colors.black),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                try {
-                  double amount = double.parse(_amountController.text);
-                  String category = _categoryController.text;
-
-                  Map<String, dynamic> updatedTransaction = {
-                    'amount': amount,
-                    'category': category,
-                    'date': transaction['date'],
-                  };
-
-                  await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(FirebaseAuth.instance.currentUser?.uid)
-                      .collection('transactions')
-                      .doc(id)
-                      .update(updatedTransaction);
-
-                  Navigator.of(context).pop();
-                  _amountController.clear();
-                  _categoryController.clear();
-
-                  print("✅ Transaction updated: $updatedTransaction");
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('กรุณากรอกจำนวนเงินให้ถูกต้อง'),
-                      backgroundColor: Colors.redAccent.withOpacity(0.8),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Edit Transaction'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _amountController,
+                    decoration: InputDecoration(
+                      labelText: "Amount (${localeProvider.currencySymbol})",
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
                       ),
+                      prefixIcon: Icon(Icons.attach_money, color: Colors.black),
                     ),
-                  );
-                }
-              },
-              child: Text('Save'),
-            ),
-          ],
+                    keyboardType: TextInputType.number,
+                    style: TextStyle(color: Colors.black),
+                    onChanged: (value) {
+                      // Dynamically update the amount when the user edits it
+                      if (value.isNotEmpty) {
+                        double enteredAmount = double.tryParse(value) ?? 0.0;
+                        double convertedAmount = enteredAmount * localeProvider.conversionRate;
+                        _amountController.text = (convertedAmount / localeProvider.conversionRate).toStringAsFixed(2);
+                      }
+                    },
+                  ),
+                  SizedBox(height: 10),
+                  TextField(
+                    controller: _categoryController,
+                    decoration: InputDecoration(
+                      labelText: "Category",
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      prefixIcon: Icon(Icons.category, color: Colors.black),
+                    ),
+                    style: TextStyle(color: Colors.black),
+                  ),
+                  SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Text(
+                        _selectedDate != null
+                            ? DateFormat('yyyy-MM-dd').format(_selectedDate!)
+                            : 'Select Date',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.calendar_today, color: Colors.black),
+                        onPressed: () => _pickDate(context),
+                      ),
+                    ],
+                  ),
+                  if (_selectedDate != null)
+                    Row(
+                      children: [
+                        Text(
+                          _selectedTime != null
+                              ? _selectedTime!.format(context)
+                              : 'Select Time',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.access_time, color: Colors.black),
+                          onPressed: () => _pickTime(context),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    try {
+                      double amount = double.parse(_amountController.text) * localeProvider.conversionRate; // Convert to selected currency
+                      String category = _categoryController.text;
+
+                      Map<String, dynamic> updatedTransaction = {
+                        'amount': amount,
+                        'category': category,
+                        'date': Timestamp.fromDate(_getFinalDateTime()), // Update the date and time
+                      };
+
+                      await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(FirebaseAuth.instance.currentUser?.uid)
+                          .collection('transactions')
+                          .doc(id)
+                          .update(updatedTransaction);
+
+                      Navigator.of(context).pop();
+                      _amountController.clear();
+                      _categoryController.clear();
+                      setState(() {
+                        _selectedDate = null; // Reset the selected date
+                        _selectedTime = null; // Reset the selected time
+                      });
+
+                      print("✅ Transaction updated: $updatedTransaction");
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('กรุณากรอกจำนวนเงินให้ถูกต้อง'),
+                          backgroundColor: Colors.redAccent.withOpacity(0.8),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: Text('Save'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -205,6 +301,8 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final localeProvider = Provider.of<LocaleProvider>(context);
+
     return Scaffold(
       appBar: AppBar(
         title: Center(
@@ -262,7 +360,10 @@ class _TransactionScreenState extends State<TransactionScreen> {
                         var data = transaction.data() as Map<String, dynamic>;
                         return ListTile(
                           title: Text(data['category']),
-                          subtitle: Text(data['amount'].toString()),
+                          subtitle: Text(
+                            localeProvider.formatAmount(data['amount']),
+                            style: TextStyle(color: Colors.red[700]), // Set expense amount to red
+                          ),
                           trailing: Text(data['date'] != null
                               ? DateFormat('HH:mm').format((data['date'] as Timestamp).toDate())
                               : 'No time'),
@@ -322,6 +423,35 @@ class _TransactionScreenState extends State<TransactionScreen> {
                         contentPadding: EdgeInsets.symmetric(vertical: 16),
                       ),
                       style: TextStyle(color: Colors.black),
+                    ),
+                    SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Text(
+                          _selectedDate != null
+                              ? DateFormat('yyyy-MM-dd').format(_selectedDate!)
+                              : 'Select Date',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.calendar_today, color: Colors.black),
+                          onPressed: () => _pickDate(context),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          _selectedTime != null
+                              ? _selectedTime!.format(context)
+                              : 'Select Time',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.access_time, color: Colors.black),
+                          onPressed: () => _pickTime(context),
+                        ),
+                      ],
                     ),
                   ],
                 ),
